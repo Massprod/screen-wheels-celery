@@ -1,0 +1,74 @@
+
+services:
+  wheels-redis:
+    image: redis:alpine
+    # Not blocking outside connection, for now.
+    # If we need to block outside connection, use `expose`.
+    # It will only allow other container in network to communicate with it == outside blocked.
+    # expose:
+    #   - {REDIS_INSIDE_PORT}
+    ports:
+      - ${REDIS_OUTSIDE_PORT}:${REDIS_INSIDE_PORT}
+    container_name: ${REDIS_CONTAINER_NAME}
+    volumes:
+      - wheels_redis_data:/data
+    networks:
+      - wheels-celery-bridge
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  
+  wheels-celery-workers:
+    build:
+      context: ./celery
+    depends_on:
+      - wheels-redis
+    container_name: ${WHEELS_CELERY_WORKERS_CONTAINER_NAME}
+    # We can override `dockerfile` if we want.
+    # command: >
+    #   sh -c "celery -A wheels_celery worker -n gather -Q get_wheels_sql_que --concurrency=1 --loglevel=info &
+    #    celery -A wheels_celery worker -n transfer -Q transfer_wheels_sql_que --concurrency=1 --loglevel=info &
+    #    celery -A wheels_celery worker -n extra_actions -Q extra_wheels_que --loglevel=info & 
+    #    celery -A wheels_celery beat --loglevel=info"
+    networks:
+      - wheels-celery-bridge
+      - wheels-mssql-bridge
+      - cross-connect-bridge
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "celery", "-A", "wheels_celery", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  wheels-flower:
+    image: mher/flower:latest
+    ports:
+      - ${WHEELS_FLOWER_OUTSIDE_PORT}:${WHEELS_FLOWER_INSIDE_PORT}
+    depends_on:
+      - wheels-redis
+      - wheels-celery-workers
+    container_name: ${WHEELS_FLOWER_CONTAINER_NAME}
+    command: ['celery', '--broker=${CELERY_BROKER_URL}', 'flower', "--basic_auth=${FLOWER_LOGIN}:${FLOWER_PASSWORD}"]
+    networks:
+      - wheels-celery-bridge
+    restart: on-failure
+
+volumes:
+  wheels_redis_data:
+
+networks:
+  wheels-celery-bridge:
+    name: wheels-celery
+    driver: bridge
+  wheels-mssql-bridge:
+    name: wheels-mssql
+    driver: bridge
+  cross-connect-bridge:
+    name: cross-connect
+    driver: bridge
