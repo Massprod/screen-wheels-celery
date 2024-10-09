@@ -24,7 +24,7 @@ def get_auth_token(auth_address: str, auth_login: str, auth_password: str) -> st
 def get_wheels_data(
         con_string: str,
         table_name: str,
-        use_timezone: bool = False
+        # use_timezone: bool = False
 ) -> list[dict]:
     connection = None
     try:
@@ -42,7 +42,8 @@ def get_wheels_data(
             f'  CAST([{table_name}].timestamp_submit as VARCHAR(50)) AS timestamp_submit, '
             f'  [{table_name}].mark '
             f'FROM [{table_name}] '
-            f'WHERE [{table_name}].mark = 0;'
+            f'WHERE [{table_name}].mark = 0 '
+            f'ORDER BY [{table_name}].timestamp_submit;'
         ))
         wheel_records = cursor.fetchall()
         wheels_data: list[dict] = []
@@ -54,10 +55,10 @@ def get_wheels_data(
             #     wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].replace(tzinfo=timezone.utc)
             # wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].isoformat()
             # Otherwise we need to mark date, when we read this record from MSQL.
-            if use_timezone:
-                wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
-            else:
-                wheel_data['timestamp_submit'] = datetime.now().isoformat()
+            # if use_timezone:
+            #     wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
+            # else:
+            #     wheel_data['timestamp_submit'] = datetime.now().isoformat()
             wheels_data.append(wheel_data)
         return wheels_data
     except Exception as error:
@@ -75,8 +76,8 @@ def sql_check_transfer_record(
     cursor = None
     try:
         cursor = sql_connection.cursor()
-        print('TABLE', table_name)
-        print('WHEEL_DATA', wheel_data)
+        # print('TABLE', table_name)
+        # print('WHEEL_DATA', wheel_data)
         query = f"""
         SELECT 
             [{table_name}].order_no

@@ -74,18 +74,19 @@ def sql_mark_read(
     try:
         sql_connection = pyodbc.connect(connection_string)
         cursor = sql_connection.cursor()
+        # date_string = "CONVERT(DATETIMEOFFSET, ?, 127)" if use_timezone else "CONVERT(DATETIME, ?, 126)"
         # 127 == ISO 8601
         query = f"""
         UPDATE [{table_name}]
-        SET timestamp_submit = CONVERT(DATETIME{'OFFSET' if use_timezone else ''}, ?, 127), mark = ?
+        SET mark = ?
         WHERE order_no = ? AND year = ? AND product_ID = ? AND marked_part_no = ? AND mark = 0;
         """
         # SQL - datetime <- can't store Timezone...
         # Using DATETIMEOFFSET <- getting it as string in `ISOformat` == ISO 8601
-        # ^^^Doin both options possible.
+        # ^^^Not using this column.
         data = [
             (
-                wheel_data['timestamp_submit'], 1, wheel_data['order_no'],
+                1, wheel_data['order_no'],
                 wheel_data['year'], wheel_data['product_ID'], wheel_data['marked_part_no']
             ) for wheel_data in transferred_wheels
         ]
