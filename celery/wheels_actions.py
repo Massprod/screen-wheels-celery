@@ -152,9 +152,10 @@ def sql_create_transfer_record(
         """
         timestamp = None
         if use_timezone:
-            timestamp = datetime.now(timezone.utc).isoformat()
+        # Format as 'YYYY-MM-DD HH:MM:SS.mmm'
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         else:
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         data = (
             wheel_data['sqlData']['order_no'],
             wheel_data['sqlData']['year'],
