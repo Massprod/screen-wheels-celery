@@ -54,9 +54,10 @@ services:
       - wheels-redis
       - wheels-celery-workers
     container_name: ${WHEELS_FLOWER_CONTAINER_NAME}
-    command: ['celery', '--broker=${CELERY_BROKER_URL}', 'flower', "--basic_auth=${FLOWER_LOGIN}:${FLOWER_PASSWORD}"]
+    command: ["celery", "--broker=${CELERY_BROKER_URL}", "flower", "--basic_auth=${FLOWER_LOGIN}:${FLOWER_PASSWORD}", "--url_prefix=celery/flower"]
     networks:
       - wheels-celery-bridge
+      - cross-connect-bridge
     restart: on-failure
 
 volumes:
