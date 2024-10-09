@@ -28,6 +28,7 @@ def sql_mark_read(
         username: str | None = None,
         password: str | None = None,
         table_name: str | None = None,
+        use_timezone: bool = False,
 ):
     redis_url = os.getenv('REDIS_EXTRA_WHEELS_URL', redis_url)
     record_name = os.getenv('CORRECT_WHEELS_RECORD_NAME', record_name)
@@ -76,11 +77,12 @@ def sql_mark_read(
         # 127 == ISO 8601
         query = f"""
         UPDATE [{table_name}]
-        SET timestamp_submit = CONVERT(DATETIMEOFFSET, ?, 127), mark = ?
+        SET timestamp_submit = CONVERT(DATETIME{'OFFSET' if use_timezone else ''}, ?, 127), mark = ?
         WHERE order_no = ? AND year = ? AND product_ID = ? AND marked_part_no = ? AND mark = 0;
         """
         # SQL - datetime <- can't store Timezone...
         # Using DATETIMEOFFSET <- getting it as string in `ISOformat` == ISO 8601
+        # ^^^Doin both options possible.
         data = [
             (
                 wheel_data['timestamp_submit'], 1, wheel_data['order_no'],
@@ -177,6 +179,7 @@ def sql_transfer_wheels(
         username: str | None = None,
         table_name: str | None = None,
         password: str | None = None,
+        use_timezone: bool = False,
 ):
     # + REDIS CONNECTION +
     redis_connection = redis.Redis.from_url(REDIS_EXTRA_WHEELS_URL)
@@ -272,11 +275,16 @@ def sql_transfer_wheels(
                     continue
                 wheel_id: str = str(wheel_sql_data['marked_part_no'])
                 wheel_batch_number: str = str(wheel_sql_data['order_no'])
+                receipt_date = None
+                if use_timezone:
+                    receipt_date = datetime.now(timezone.utc).isoformat()
+                else:
+                    receipt_date = datetime.now().isoformat()
                 wheel_req_body: dict = {
                     'wheelId': wheel_id,
                     'batchNumber': wheel_batch_number,
                     'wheelDiameter': 10_000,
-                    'receiptDate': datetime.now(timezone.utc).isoformat(),
+                    'receiptDate': receipt_date,
                     'status': 'basePlatform',
                     'sqlData': wheel_sql_data,
                 }

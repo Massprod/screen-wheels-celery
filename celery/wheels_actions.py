@@ -24,6 +24,7 @@ def get_auth_token(auth_address: str, auth_login: str, auth_password: str) -> st
 def get_wheels_data(
         con_string: str,
         table_name: str,
+        use_timezone: bool = False
 ) -> list[dict]:
     connection = None
     try:
@@ -53,7 +54,10 @@ def get_wheels_data(
             #     wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].replace(tzinfo=timezone.utc)
             # wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].isoformat()
             # Otherwise we need to mark date, when we read this record from MSQL.
-            wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
+            if use_timezone:
+                wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
+            else:
+                wheel_data['timestamp_submit'] = datetime.now().isoformat()
             wheels_data.append(wheel_data)
         return wheels_data
     except Exception as error:
@@ -105,6 +109,7 @@ def sql_create_transfer_record(
         sql_connection,
         table_name: str,
         wheel_data: dict,
+        use_timezone: bool = False
 ):
     cursor = None
     try:
@@ -144,6 +149,11 @@ def sql_create_transfer_record(
             mark
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
+        timestamp = None
+        if use_timezone:
+            timestamp = datetime.now(timezone.utc).isoformat()
+        else:
+            timestamp = datetime.now().isoformat()
         data = (
             wheel_data['sqlData']['order_no'],
             wheel_data['sqlData']['year'],
@@ -151,7 +161,7 @@ def sql_create_transfer_record(
             wheel_data['sqlData']['marked_part_no'],
             0,  # not used yet.
             wheelstack_position,
-            datetime.now(timezone.utc),
+            timestamp,
             batch_translate[wheel_status],
             wheel_status_translate[wheel_status],
             0,  # not used yet.

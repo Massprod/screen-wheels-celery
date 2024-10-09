@@ -42,17 +42,17 @@ app.conf.beat_schedule = {
     },
     'trigger_redis_clear_failed_wheels': {
         'task': 'redis_clear_failed_wheels',
-        'schedule': 60.0,
+        'schedule': 30.0,
         'args': (),
     },
     'trigger_redis_transfer_correct_wheels': {
         'task': 'sql_mark_read',
-        'schedule': 60.0,
+        'schedule': 30.0,
         'args': (),
     },
     'trigger_transfer_wheels_mongo': {
         'task': 'transfer_wheels_mongo',
-        'schedule': 5.0,  # TODO: change to 30s after tests
+        'schedule': 30.0,
         'args': (),
     }
 }
