@@ -58,7 +58,7 @@ def get_wheels_data(
             # if use_timezone:
             #     wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
             # else:
-            #     wheel_data['timestamp_submit'] = datetime.now().isoformat()
+            wheel_data['timestamp_submit'] = datetime.now().isoformat()
             wheels_data.append(wheel_data)
         return wheels_data
     except Exception as error:
