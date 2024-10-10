@@ -79,7 +79,7 @@ def sql_mark_read(
         query = f"""
         UPDATE [{table_name}]
         SET mark = ?
-        WHERE order_no = ? AND year = ? AND product_ID = ? AND marked_part_no = ? AND mark = 0;
+        WHERE order_no = ? AND year = ? AND product_ID = ? AND marked_part_no = ? AND mark = 0 AND CAST(timestamp_submit as DATETIME2) = ?;
         """
         # SQL - datetime <- can't store Timezone...
         # Using DATETIMEOFFSET <- getting it as string in `ISOformat` == ISO 8601
@@ -87,7 +87,7 @@ def sql_mark_read(
         data = [
             (
                 1, wheel_data['order_no'],
-                wheel_data['year'], wheel_data['product_ID'], wheel_data['marked_part_no']
+                wheel_data['year'], wheel_data['product_ID'], wheel_data['marked_part_no'], wheel_data['timestamp_submit']
             ) for wheel_data in transferred_wheels
         ]
         cursor.executemany(query, data)
