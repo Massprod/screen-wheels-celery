@@ -39,7 +39,7 @@ def get_wheels_data(
             f'  [{table_name}].shuttle_number, '
             f'  [{table_name}].stack_number, '
             f'  [{table_name}].number_in_stack, '
-            f'  [{table_name}].timestamp_submit '
+            f'  [{table_name}].timestamp_submit, '
             f'  [{table_name}].mark '
             f'FROM [{table_name}] '
             f'WHERE [{table_name}].mark = 0 '
