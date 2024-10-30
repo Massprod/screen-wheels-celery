@@ -1,6 +1,6 @@
 import pyodbc
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 def get_auth_token(auth_address: str, auth_login: str, auth_password: str) -> str:
@@ -22,13 +22,34 @@ def get_auth_token(auth_address: str, auth_login: str, auth_password: str) -> st
 
 
 def get_wheels_data(
-        con_string: str,
+        connection: pyodbc.Connection,
         table_name: str,
-        # use_timezone: bool = False
+        shuttle_number: int = 0,
+        close_connection: bool = False,
 ) -> list[dict]:
-    connection = None
     try:
-        connection = pyodbc.connect(con_string)
+        # + SHUTTLE READY +
+        ready_column = 'wheels_unloading'
+        cursor = connection.cursor()
+        query = f'SELECT MIN([{table_name}].{ready_column}) ' \
+                f'FROM [{table_name}] ' \
+                f'WHERE [{table_name}].mark = 0 AND [{table_name}].shuttle_number = ?;'
+        data = (shuttle_number,)
+        cursor.execute(
+            query, data
+        )
+        min_ready_date = cursor.fetchone()
+        # cringe
+        if not min_ready_date:
+            return []
+        min_ready_date = min_ready_date[0]
+        if not min_ready_date:
+            return []
+        # We can't use `2024-10-30 08:55:42.107000` but we can use `2024-10-30 08:55:42.107`
+        # Standard python.datetime 6points precision for Microseconds.
+        # SQL DATETIME 3points precision for Microseconds
+        sliced_datetime = str(min_ready_date)[:-3]
+        # - SHUTTLE READY -
         cursor = connection.cursor()
         cursor.execute((
             f'SELECT ' 
@@ -42,29 +63,21 @@ def get_wheels_data(
             f'  [{table_name}].timestamp_submit, '
             f'  [{table_name}].mark '
             f'FROM [{table_name}] '
-            f'WHERE [{table_name}].mark = 0 '
+            f'WHERE [{table_name}].mark = 0 AND [{table_name}].{ready_column} = ? '
             f'ORDER BY [{table_name}].timestamp_submit;'
-        ))
+        ), (sliced_datetime,))
         wheel_records = cursor.fetchall()
         wheels_data: list[dict] = []
         table_columns: list[str] = [column[0] for column in cursor.description]
         for wheel_record in wheel_records:
             wheel_data = dict(zip(table_columns, wheel_record))
-            # If we get datetime, then we need to convert.
-            # if wheel_data['timestamp_submit'].tzinfo is None:
-            #     wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].replace(tzinfo=timezone.utc)
-            # wheel_data['timestamp_submit'] = wheel_data['timestamp_submit'].isoformat()
-            # Otherwise we need to mark date, when we read this record from MSQL.
-            # if use_timezone:
-            #     wheel_data['timestamp_submit'] = datetime.now(timezone.utc).isoformat()  # SQL - datetime <- can't store Timezone..
-            # else:
             wheel_data['timestamp_submit'] = datetime.now().isoformat()
             wheels_data.append(wheel_data)
         return wheels_data
     except Exception as error:
         raise Exception(f'Error while getting wheels data: {error}')
     finally:
-        if connection:
+        if close_connection and connection:
             connection.close()
 
 
@@ -76,8 +89,6 @@ def sql_check_transfer_record(
     cursor = None
     try:
         cursor = sql_connection.cursor()
-        # print('TABLE', table_name)
-        # print('WHEEL_DATA', wheel_data)
         query = f"""
         SELECT 
             [{table_name}].order_no
@@ -107,7 +118,7 @@ def sql_check_transfer_record(
 
 
 def sql_create_transfer_record(
-        sql_connection,
+        sql_connection: pyodbc.Connection,
         table_name: str,
         wheel_data: dict,
         use_timezone: bool = False
@@ -152,10 +163,10 @@ def sql_create_transfer_record(
         """
         timestamp = None
         if use_timezone:
-        # Format as 'YYYY-MM-DD HH:MM:SS.mmm'
-            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        # Format as 'YYYY-MM-DD HH:MM:SS'
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
         else:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         data = (
             wheel_data['sqlData']['order_no'],
             wheel_data['sqlData']['year'],

@@ -238,122 +238,145 @@ def sql_transfer_wheels(
     if not platform_resp.ok:
         raise Exception(f'Failed to get placement `objectId`. Status code: {platform_resp.status_code}, Response: {platform_resp.text}')
     platform_data = platform_resp.json()
-    platform_id: str = platform_data['_id']    
+    platform_id: str = platform_data['_id']
     # - PLATFORM ID -
-    wheels_data: list[dict] = get_wheels_data(connection_string, table_name)
+    # shuttle 1 == 1 row
+    # shuttle 2 == 2 row
+    used_rows: list[str] = ['1', '2']
+    #  Empty row == can be placed
+    check_rows: dict[int, bool] = {_row: True for _row in used_rows}
+    for row in check_rows:
+        if row not in platform_data['rows']:
+            continue
+        columns = platform_data['rows'][row]['columns']
+        for column in columns:
+            if columns[column]['wheelStack'] is None:
+                continue
+            check_rows[row] = False
+            break
+    sql_connection = pyodbc.connect(connection_string)
+    # we need to have more adequate shuttles reading
+    shuttles_data: list[list[dict]] = []
+    for row in check_rows:
+        if check_rows[row]:
+            shuttle_data: list[dict] = get_wheels_data(sql_connection, table_name, row)
+            shuttles_data.append(shuttle_data)
+    if sql_connection:
+        sql_connection.close()
     result: dict = {
         'createdWheels': [],
         'createdWheelstacks': [],
     }
-    if not wheels_data:
+    if not shuttles_data:
         return result
-    # Gather all data by corresponding `wheelstack`'s -> after getting wheels from MSQL.
-    wheelstacks_data = {}
-    for wheel_data in wheels_data:
-        wheelstack_row: int = wheel_data['shuttle_number']
-        if wheelstack_row not in wheelstacks_data:
-            wheelstacks_data[wheelstack_row] = {}
-        wheelstack_column: int = wheel_data['stack_number']
-        if wheelstack_column not in wheelstacks_data[wheelstack_row]:
-            wheelstacks_data[wheelstack_row][wheelstack_column] = {
-                'originalWheels': [None for _ in range(10)],
-                'createdWheels': [],
-            }
-        wheelstack_position: int = wheel_data['number_in_stack']
-        wheelstacks_data[wheelstack_row][wheelstack_column]['originalWheels'][wheelstack_position] = wheel_data
-    # Create wheels and place them in corresponding wheelstacks.
-    create_wheel_url: str = f'{api_address}/wheels'
-    failed_wheels: list[str] = []
-    # [(row, col)]
-    failed_wheelstacks: list[tuple[int, int]] = []
-    for wheelstack_row in wheelstacks_data:
-        for wheelstack_column in wheelstacks_data[wheelstack_row]:
-            created_wheels: list[str] = wheelstacks_data[wheelstack_row][wheelstack_column]['createdWheels']
-            original_wheels: list[dict] = wheelstacks_data[wheelstack_row][wheelstack_column]['originalWheels']
-            for wheel_sql_data in original_wheels:
-                if not wheel_sql_data:
-                    continue
-                wheel_id: str = str(wheel_sql_data['marked_part_no'])
-                wheel_batch_number: str = str(wheel_sql_data['order_no'])
-                receipt_date = None
-                if use_timezone:
-                    receipt_date = datetime.now(timezone.utc).isoformat()
-                else:
-                    receipt_date = datetime.now().isoformat()
-                wheel_req_body: dict = {
-                    'wheelId': wheel_id,
-                    'batchNumber': wheel_batch_number,
-                    'wheelDiameter': 10_000,
-                    'receiptDate': receipt_date,
-                    'status': 'basePlatform',
-                    'sqlData': wheel_sql_data,
+    for wheels_data in shuttles_data:
+        # Gather all data by corresponding `wheelstack`'s -> after getting wheels from MSQL.
+        wheelstacks_data = {}
+        for wheel_data in wheels_data:
+            wheelstack_row: int = wheel_data['shuttle_number']
+            if wheelstack_row not in wheelstacks_data:
+                wheelstacks_data[wheelstack_row] = {}
+            wheelstack_column: int = wheel_data['stack_number']
+            if wheelstack_column not in wheelstacks_data[wheelstack_row]:
+                wheelstacks_data[wheelstack_row][wheelstack_column] = {
+                    'originalWheels': [None for _ in range(10)],
+                    'createdWheels': [],
                 }
-                wheel_req_headers: dict[str, str] = {
+            wheelstack_position: int = wheel_data['number_in_stack']
+            wheelstacks_data[wheelstack_row][wheelstack_column]['originalWheels'][wheelstack_position] = wheel_data
+        # Create wheels and place them in corresponding wheelstacks.
+        create_wheel_url: str = f'{api_address}/wheels'
+        failed_wheels: list[str] = []
+        # [(row, col)]
+        failed_wheelstacks: list[tuple[int, int]] = []
+        for wheelstack_row in wheelstacks_data:
+            for wheelstack_column in wheelstacks_data[wheelstack_row]:
+                created_wheels: list[str] = wheelstacks_data[wheelstack_row][wheelstack_column]['createdWheels']
+                original_wheels: list[dict] = wheelstacks_data[wheelstack_row][wheelstack_column]['originalWheels']
+                for wheel_sql_data in original_wheels:
+                    if not wheel_sql_data:
+                        continue
+                    wheel_id: str = str(wheel_sql_data['marked_part_no'])
+                    wheel_batch_number: str = str(wheel_sql_data['order_no'])
+                    receipt_date = None
+                    if use_timezone:
+                        receipt_date = datetime.now(timezone.utc).isoformat()
+                    else:
+                        receipt_date = datetime.now().isoformat()
+                    wheel_req_body: dict = {
+                        'wheelId': wheel_id,
+                        'batchNumber': wheel_batch_number,
+                        'wheelDiameter': 10_000,
+                        'receiptDate': receipt_date,
+                        'status': 'basePlatform',
+                        'sqlData': wheel_sql_data,
+                    }
+                    wheel_req_headers: dict[str, str] = {
+                        'Content-type': 'application/json',
+                        'Authorization': f'Bearer {auth_token}'
+                    }
+                    wheel_resp = requests.post(
+                        create_wheel_url,
+                        json=wheel_req_body,
+                        headers=wheel_req_headers,
+                        timeout=15,
+                    )
+                    if not wheel_resp.ok:
+                        failed_wheels += created_wheels
+                        failed_wheelstacks.append(
+                            (wheelstack_row, wheelstack_column)
+                        )
+                        break
+                    created_wheel_data = wheel_resp.json()
+                    created_wheels.append(created_wheel_data['_id'])
+        for row, col in failed_wheelstacks:
+            del wheelstacks_data[row][col]
+        create_wheelstack_url: str = f'{api_address}/wheelstacks'
+        created_wheelstacks: list[str] = []
+        for wheelstack_row in wheelstacks_data:
+            for wheelstack_column in wheelstacks_data[wheelstack_row]:
+                wheelstack_data = wheelstacks_data[wheelstack_row][wheelstack_column]
+                wheelstack_wheels: list[str] = wheelstack_data['createdWheels']
+                wheelstack_batch_number: str = ''
+                for sql_wheel_data in wheelstack_data['originalWheels']:
+                    if not sql_wheel_data:
+                        continue
+                    wheelstack_batch_number = str(sql_wheel_data['order_no'])
+                    break
+                wheelstack_request_body: dict = {
+                    'placementId': platform_id,
+                    'placementType': STANDARD_PLACEMENT_STATUS,
+                    'rowPlacement': str(wheelstack_row),
+                    'colPlacement': str(wheelstack_column),
+                    'maxSize': WHEELSTACK_MAX_SIZE,
+                    'batchNumber': wheelstack_batch_number, 
+                    'blocked': False,
+                    'status': STANDARD_PLACEMENT_STATUS,
+                    'wheels': wheelstack_wheels,
+                }
+                wheelstack_request_headers: dict[str, str] = {
                     'Content-type': 'application/json',
-                    'Authorization': f'Bearer {auth_token}'
+                    'Authorization': f'Bearer {auth_token}',
                 }
-                wheel_resp = requests.post(
-                    create_wheel_url,
-                    json=wheel_req_body,
-                    headers=wheel_req_headers,
+                wheelstack_resp = requests.post(
+                    create_wheelstack_url,
+                    json=wheelstack_request_body,
+                    headers=wheelstack_request_headers,
                     timeout=15,
                 )
-                if not wheel_resp.ok:
-                    failed_wheels += created_wheels
-                    failed_wheelstacks.append(
-                        (wheelstack_row, wheelstack_column)
+                if 201 != wheelstack_resp.status_code:
+                    failed_wheels += wheelstack_wheels
+                    continue
+                created_wheelstack_data = wheelstack_resp.json()
+                for wheel_data in wheelstack_data['originalWheels']:
+                    if not wheel_data:
+                        continue
+                    redis_connection.rpush(
+                        CORRECT_WHEELS_RECORD_NAME,
+                        json.dumps(wheel_data)
                     )
-                    break
-                created_wheel_data = wheel_resp.json()
-                created_wheels.append(created_wheel_data['_id'])
-    for row, col in failed_wheelstacks:
-        del wheelstacks_data[row][col]
-    create_wheelstack_url: str = f'{api_address}/wheelstacks'
-    created_wheelstacks: list[str] = []
-    for wheelstack_row in wheelstacks_data:
-        for wheelstack_column in wheelstacks_data[wheelstack_row]:
-            wheelstack_data = wheelstacks_data[wheelstack_row][wheelstack_column]
-            wheelstack_wheels: list[str] = wheelstack_data['createdWheels']
-            wheelstack_batch_number: str = ''
-            for sql_wheel_data in wheelstack_data['originalWheels']:
-                if not sql_wheel_data:
-                    continue
-                wheelstack_batch_number = str(sql_wheel_data['order_no'])
-                break
-            wheelstack_request_body: dict = {
-                'placementId': platform_id,
-                'placementType': STANDARD_PLACEMENT_STATUS,
-                'rowPlacement': str(wheelstack_row),
-                'colPlacement': str(wheelstack_column),
-                'maxSize': WHEELSTACK_MAX_SIZE,
-                'batchNumber': wheelstack_batch_number, 
-                'blocked': False,
-                'status': STANDARD_PLACEMENT_STATUS,
-                'wheels': wheelstack_wheels,
-            }
-            wheelstack_request_headers: dict[str, str] = {
-                'Content-type': 'application/json',
-                'Authorization': f'Bearer {auth_token}',
-            }
-            wheelstack_resp = requests.post(
-                create_wheelstack_url,
-                json=wheelstack_request_body,
-                headers=wheelstack_request_headers,
-                timeout=15,
-            )
-            if 201 != wheelstack_resp.status_code:
-                failed_wheels += wheelstack_wheels
-                continue
-            created_wheelstack_data = wheelstack_resp.json()
-            for wheel_data in wheelstack_data['originalWheels']:
-                if not wheel_data:
-                    continue
-                redis_connection.rpush(
-                    CORRECT_WHEELS_RECORD_NAME,
-                    json.dumps(wheel_data)
-                )
-            created_wheelstacks.append(created_wheelstack_data['_id'])
-            sql_mark_read.delay()
+                created_wheelstacks.append(created_wheelstack_data['_id'])
+                sql_mark_read.delay()
     # Mark wheels for failed wheelstack | wheel creation, clearing them every 30s.
     # Because we don't care about empty wheels created in our MongoDB.
     # They will never affect anything, because we never use them by themselves.
