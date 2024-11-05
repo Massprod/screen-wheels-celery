@@ -31,24 +31,6 @@ def get_wheels_data(
         # + SHUTTLE READY +
         ready_column = 'wheels_unloading'
         cursor = connection.cursor()
-        query = f'SELECT MIN([{table_name}].{ready_column}) ' \
-                f'FROM [{table_name}] ' \
-                f'WHERE [{table_name}].mark = 0 AND [{table_name}].shuttle_number = ?;'
-        data = (shuttle_number,)
-        cursor.execute(
-            query, data
-        )
-        min_ready_date = cursor.fetchone()
-        # cringe
-        if not min_ready_date:
-            return []
-        min_ready_date = min_ready_date[0]
-        if not min_ready_date:
-            return []
-        # We can't use `2024-10-30 08:55:42.107000` but we can use `2024-10-30 08:55:42.107`
-        # Standard python.datetime 6points precision for Microseconds.
-        # SQL DATETIME 3points precision for Microseconds
-        sliced_datetime = str(min_ready_date)[:-3]
         # - SHUTTLE READY -
         cursor = connection.cursor()
         cursor.execute((
@@ -63,9 +45,18 @@ def get_wheels_data(
             f'  [{table_name}].timestamp_submit, '
             f'  [{table_name}].mark '
             f'FROM [{table_name}] '
-            f'WHERE [{table_name}].mark = 0 AND [{table_name}].{ready_column} = ? '
+            f'WHERE [{table_name}].mark = 0 '
+            f'AND '
+            f'[{table_name}].{ready_column} = ('
+            f'  SELECT MIN([{table_name}].{ready_column}) '
+            f'  FROM [{table_name}] '
+            f'  WHERE '
+            f'  [{table_name}].mark = 0 '
+            f'  AND '
+            f'  [{table_name}].shuttle_number = ? '
+            f') '
             f'ORDER BY [{table_name}].timestamp_submit;'
-        ), (sliced_datetime,))
+        ), shuttle_number)
         wheel_records = cursor.fetchall()
         wheels_data: list[dict] = []
         table_columns: list[str] = [column[0] for column in cursor.description]
