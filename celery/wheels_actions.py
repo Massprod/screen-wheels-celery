@@ -57,7 +57,7 @@ def get_wheels_data(
             f'  AND '
             f'  [{table_name}].marked_part_no <> 1111 '
             f') '
-            f'AND'
+            f'AND '
             f'[{table_name}].marked_part_no <> 1111 '
             f'ORDER BY [{table_name}].timestamp_submit;'
         ), shuttle_number)
