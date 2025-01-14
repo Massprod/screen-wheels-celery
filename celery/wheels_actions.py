@@ -116,7 +116,7 @@ def sql_create_transfer_record(
         sql_connection: pyodbc.Connection,
         table_name: str,
         wheel_data: dict,
-        use_timezone: bool = False
+        timestamp: datetime,
 ):
     cursor = None
     try:
@@ -156,18 +156,12 @@ def sql_create_transfer_record(
             mark
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
-        timestamp = None
-        if use_timezone:
-        # Format as 'YYYY-MM-DD HH:MM:SS'
-            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
-        else:
-            timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         data = (
             wheel_data['sqlData']['order_no'],
             wheel_data['sqlData']['year'],
             wheel_data['sqlData']['product_ID'],
             wheel_data['sqlData']['marked_part_no'],
-            0,  # not used yet.
+            wheel_data['sqlData'].get('virtualPosition', 0),
             wheelstack_position,
             timestamp,
             batch_translate[wheel_status],

@@ -2,6 +2,7 @@ import os
 import pyodbc
 import requests
 from wheels_celery import app
+from datetime import datetime, timezone
 from wheels_actions import get_auth_token, sql_check_transfer_record, sql_create_transfer_record
 
 
@@ -16,7 +17,8 @@ def transfer_wheels_mongo(
         auth_address: str | None = None,
         auth_login: str | None = None,
         auth_password: str | None = None,
-        api_address: str | None = None
+        api_address: str | None = None,
+        use_timezone: bool = False,
 ):
     auth_address: str = os.getenv(
         'AUTH_ADDRESS', auth_address
@@ -86,9 +88,15 @@ def transfer_wheels_mongo(
         exists = sql_check_transfer_record(
             sql_connection, table_name, wheel_data
         )
+        timestamp = None
+        if use_timezone:
+        # Format as 'YYYY-MM-DD HH:MM:SS'
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        else:
+            timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         if not exists:
             sql_create_transfer_record(
-                sql_connection, table_name, wheel_data
+                sql_connection, table_name, wheel_data, timestamp
             )
         upd_wheel_transfer_status_url = f'{api_address}/wheels/transfer/update/{wheel_data['_id']}?transfer_status=true'
         upd_resp = requests.patch(upd_wheel_transfer_status_url, headers=auth_req_headers)
